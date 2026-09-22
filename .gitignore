@@ -1,0 +1,21 @@
+# local-only runtime state (cloud posts stateless via Threads API)
+state.json
+state_questions.json
+state_brands.json
+post.log
+post_slots.log
+*.log
+# analytics (local review task)
+insights.json
+insights.md
+insights_summary.md
+# backups
+content_bank.backup*.json
+state.backup*.json
+*.backup_*.json
+__pycache__/
+# NOTE: secrets.json IS committed on purpose (private repo) so cloud routines can post.
+
+# token is NOT committed - delivered to cloud separately
+secrets.json
+*.bak_refill
