@@ -107,6 +107,30 @@ def get_user_id(token):
     return uid
 
 
+def cmd_recent(n=15):
+    """Print recent published post texts (to avoid repeating topics)."""
+    token = secrets()["access_token"]
+    uid = get_user_id(token)
+    for t in _published_texts(uid, token, n):
+        print("- " + (t or "").replace("\n", " ")[:160])
+
+
+def cmd_post_text(text):
+    """Publish ONE plain text post. SAFE MODE: refuses any link/domain."""
+    token = secrets()["access_token"]
+    text = (text or "").replace("—", "-").replace("–", "-").strip()
+    if not text:
+        log("Пустой текст."); sys.exit(3)
+    low = text.lower()
+    if any(x in low for x in ("http", "www.", ".com", ".ai", ".ru", ".net", ".io", "aksalex")):
+        log("ОТКАЗ: в тексте ссылка/домен. Безопасный режим - постим БЕЗ ссылок."); sys.exit(3)
+    if len(text) > 500:
+        log("Длиннее 500 (%d), обрезаю." % len(text)); text = text[:500]
+    uid = get_user_id(token)
+    mid = _publish_text(uid, token, text)
+    log("ОПУБЛИКОВАНО [text] media_id=%s" % mid)
+
+
 def cmd_me():
     token = secrets()["access_token"]
     try:
@@ -460,6 +484,10 @@ def main():
         cmd_token_refresh()
     elif cmd == "add" and len(args) > 1:
         cmd_add(args[1])
+    elif cmd == "recent":
+        cmd_recent(int(args[1]) if len(args) > 1 and args[1].isdigit() else 15)
+    elif cmd == "post-text" and len(args) > 1:
+        cmd_post_text(args[1])
     elif cmd == "insights":
         cmd_insights()
     elif cmd == "trends":
