@@ -72,14 +72,19 @@ def load_post(path):
         print("ОШИБКА: пустой slug")
         sys.exit(3)
     link = build_link(slug)
-    comment = p.get("comment", "").strip()
-    comment = comment.replace("{link}", link) if "{link}" in comment else (comment + " " + link).strip()
     post = p.get("post", "").strip()
+    raw = p.get("comment", "").strip()
+    # comment (со ссылкой) необязателен - ссылку даём НЕ в каждом посте, чтобы не спамить
+    if raw:
+        comment = raw.replace("{link}", link) if "{link}" in raw else (raw + " " + link).strip()
+    else:
+        comment = ""
 
     errors = []
-    for name, text in (("post", post), ("comment", comment)):
-        if not text:
-            errors.append("%s пустой" % name)
+    if not post:
+        errors.append("post пустой")
+    checks = [("post", post)] + ([("comment", comment)] if comment else [])
+    for name, text in checks:
         if len(text) > MAX_LEN:
             errors.append("%s длиннее %d символов (%d)" % (name, MAX_LEN, len(text)))
         for ch in BANNED:
@@ -123,9 +128,12 @@ def cmd_publish(path, dry=False):
     uid = me()["id"]
     post_id = publish_text(uid, post)
     print("PUBLISHED post", post_id)
-    time.sleep(30)
-    comment_id = publish_text(uid, comment, reply_to=post_id)
-    print("PUBLISHED comment", comment_id)
+    if comment:
+        time.sleep(30)
+        comment_id = publish_text(uid, comment, reply_to=post_id)
+        print("PUBLISHED comment", comment_id)
+    else:
+        print("без коммента (ссылку в этот раз не даём)")
     info = http("GET", "/%s" % post_id, {"fields": "permalink"})
     print("URL", info.get("permalink"))
 
