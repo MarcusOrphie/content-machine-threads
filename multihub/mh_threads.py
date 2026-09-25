@@ -111,6 +111,21 @@ def me():
     return http("GET", "/me", {"fields": "id,username"})
 
 
+def link_posted_today(uid):
+    """Есть ли среди наших ответов за сегодня (МСК) ссылка на multihub.ai."""
+    today = datetime.datetime.now(MSK).date()
+    res = http("GET", "/%s/replies" % uid, {"fields": "text,timestamp", "limit": 25})
+    for r in res.get("data", []):
+        ts = r.get("timestamp", "")
+        try:
+            d = datetime.datetime.strptime(ts, "%Y-%m-%dT%H:%M:%S%z").astimezone(MSK).date()
+        except ValueError:
+            continue
+        if d == today and "multihub.ai" in (r.get("text") or ""):
+            return True
+    return False
+
+
 def cmd_recent(n):
     uid = me()["id"]
     res = http("GET", "/%s/threads" % uid, {"fields": "id,text,timestamp,permalink", "limit": n})
@@ -126,6 +141,9 @@ def cmd_publish(path, dry=False):
         print("CHECK OK")
         return
     uid = me()["id"]
+    if comment and link_posted_today(uid):
+        print("REJECTED: ссылка сегодня уже была, второй раз не ставим. Оставь comment пустым.")
+        sys.exit(3)
     post_id = publish_text(uid, post)
     print("PUBLISHED post", post_id)
     if comment:
