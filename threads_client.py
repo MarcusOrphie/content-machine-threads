@@ -13,6 +13,8 @@ Commands:
   python threads_client.py token-exchange       - short-lived -> long-lived (60 days)
   python threads_client.py token-refresh        - refresh long-lived token (extend 60 days)
   python threads_client.py add "текст поста"    - append a post to the bank
+  python threads_client.py trends "слово1" "слово2"  - собрать кандидаты в тренды (keyword_search) -> trends.md
+  python threads_client.py insights             - собрать метрики постов
 
 Secrets live in secrets.json (never commit):
   { "access_token": "...", "user_id": "...", "app_secret": "..." }
@@ -386,6 +388,58 @@ def cmd_insights():
             % (r["theme"], r["engagement"], r["views"], r["likes"], r["replies"], r["text"][:50]))
 
 
+TRENDS_JSON = os.path.join(HERE, "trends.json")
+TRENDS_MD = os.path.join(HERE, "trends.md")
+KEYWORDS_PATH = os.path.join(HERE, "trend_keywords.json")
+
+
+def cmd_trends(keywords, search_type="TOP", per=8):
+    """Step 1 of the pipeline: gather trend candidates via Threads keyword_search.
+    Writes trends.json + trends.md with raw candidates for Claude/human to score."""
+    if not keywords:
+        keywords = load_json(KEYWORDS_PATH, [])
+    if not keywords:
+        log("Нет ключевых слов. Передай их аргументами или создай trend_keywords.json "
+            '(список строк). Пример: python threads_client.py trends "нейросети" "контент"')
+        return
+    token = secrets()["access_token"]
+    seen, rows = set(), []
+    for kw in keywords:
+        url = (BASE + "/keyword_search?q=%s&search_type=%s&fields=id,text,timestamp,permalink"
+               "&limit=%d&access_token=%s"
+               % (urllib.parse.quote(kw), search_type, per, urllib.parse.quote(token)))
+        try:
+            data = http_get(url)
+        except urllib.error.HTTPError as e:
+            body = api_error(e)
+            log("keyword_search '%s' - ошибка: %s" % (kw, body))
+            if "permission" in body.lower() or "scope" in body.lower():
+                log("Похоже, нет права threads_keyword_search. Добавь его и ПЕРЕВЫПУСТИ токен.")
+            continue
+        for it in data.get("data", []):
+            t = (it.get("text") or "").strip()
+            if not t or it.get("id") in seen:
+                continue
+            seen.add(it["id"])
+            rows.append({"keyword": kw, "text": t,
+                         "permalink": it.get("permalink", ""), "timestamp": it.get("timestamp", "")})
+    save_json(TRENDS_JSON, rows)
+    lines = ["# Кандидаты в тренды (keyword_search, %s)\n" % search_type,
+             "_Собрано %s. Дальше - скоринг Claude по осям свежесть/связь-с-оффером/безопасность._\n"
+             % time.strftime("%Y-%m-%d %H:%M")]
+    for kw in keywords:
+        kw_rows = [r for r in rows if r["keyword"] == kw]
+        if not kw_rows:
+            continue
+        lines.append("\n## %s (%d)\n" % (kw, len(kw_rows)))
+        for r in kw_rows:
+            snippet = r["text"].replace("\n", " ")[:160]
+            lines.append("- %s  %s" % (snippet, r["permalink"]))
+    with open(TRENDS_MD, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines) + "\n")
+    log("Собрано %d кандидатов по %d словам -> trends.json + trends.md" % (len(rows), len(keywords)))
+
+
 def main():
     args = sys.argv[1:]
     if not args:
@@ -408,6 +462,10 @@ def main():
         cmd_add(args[1])
     elif cmd == "insights":
         cmd_insights()
+    elif cmd == "trends":
+        kws = [a for a in args[1:] if not a.startswith("--")]
+        st = "RECENT" if "--recent" in args else "TOP"
+        cmd_trends(kws, search_type=st)
     else:
         print(__doc__)
 
